@@ -1,0 +1,877 @@
+// ============================================================
+// Dispatch Platform — Prisma Schema (Module 2)
+// DATABASE_URL  → pgBouncer pooler (port 6543) — runtime
+// DIRECT_URL    → direct connection (port 5432) — migrations only
+// ============================================================
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── ENUMS ──────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  AGENCY_ADMIN
+  DISPATCHER
+  FLEET_ADMIN
+  DRIVER
+}
+
+enum SubscriptionPlan {
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+enum AgencyStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum FleetStatus {
+  INVITED
+  PENDING
+  ACTIVE
+  REJECTED
+  SUSPENDED
+  INACTIVE
+}
+
+enum DispatcherStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED_TRANSFER
+  SUSPENDED_RESTORATION
+  INACTIVE
+}
+
+enum DriverStatus {
+  PENDING
+  ACTIVE
+  ON_LOAD
+  SUSPENDED_TRANSFER
+  SUSPENDED_RESTORATION
+  INACTIVE
+}
+
+enum VehicleType {
+  SEMI
+  FLATBED
+  REEFER
+  BOX_TRUCK
+  TANKER
+  OTHER
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  ON_LOAD
+  UNDER_MAINTENANCE
+  INACTIVE
+}
+
+enum LoadStatus {
+  DRAFT
+  ASSIGNED
+  IN_TRANSIT
+  PENDING_DELIVERY_CONFIRMATION
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  DISPUTED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CHEQUE
+  CASH
+  OTHER
+}
+
+enum TransferStatus {
+  PENDING
+  PARTIAL
+  APPROVED
+  DECLINED
+  CANCELLED
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  CANCELLED
+}
+
+enum RelationshipStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// ─── SUPER ADMIN ────────────────────────────────────────────
+
+model SuperAdmin {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("super_admins")
+}
+
+// ─── AGENCY ─────────────────────────────────────────────────
+
+model Agency {
+  id           String       @id @default(cuid())
+  name         String
+  ownerName    String
+  contactEmail String       @unique
+  contactPhone String
+  address      String
+
+  // Financial defaults
+  commissionPercent Float @default(8.0)
+  paymentTermsDays  Int   @default(30)
+
+  // Subscription
+  plan                  SubscriptionPlan @default(BASIC)
+  status                AgencyStatus     @default(ACTIVE)
+  subscriptionExpiresAt DateTime?
+
+  // Branding (logo stored in Supabase Storage — agency-logos bucket, PUBLIC)
+  logoUrl           String?
+  primaryColor      String?
+  secondaryColor    String?
+  agencyAddress     String?
+  agencyPhone       String?
+  agencyEmail       String?
+  footerText        String?
+  customEmailDomain String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  agencyUsers                    AgencyUser[]
+  dispatchers                    Dispatcher[]
+  loads                          Load[]
+  invoices                       Invoice[]
+  agencyFleetRelationships       AgencyFleetRelationship[]
+  dispatcherTransferRequestsFrom DispatcherTransferRequest[] @relation("TransferFromAgency")
+  dispatcherTransferRequestsTo   DispatcherTransferRequest[] @relation("TransferToAgency")
+  dispatcherJoinRequests         DispatcherJoinRequest[]
+  notifications                  Notification[]
+
+  @@map("agencies")
+}
+
+model AgencyUser {
+  id       String @id @default(cuid())
+  agencyId String
+  name     String
+  email    String @unique
+  password String
+  phone    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agency   Agency    @relation(fields: [agencyId], references: [id])
+  sessions Session[]
+
+  @@map("agency_users")
+}
+
+// ─── FLEET ──────────────────────────────────────────────────
+
+model Fleet {
+  id            String      @id @default(cuid())
+  name          String
+  adminName     String
+  contactPerson String?
+  phone         String
+  email         String      @unique
+  address       String?
+  logoUrl       String?
+  status        FleetStatus @default(INVITED)
+
+  invitedByAgencyId String?
+  approvedAt        DateTime?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+
+  // One-time use token for fleet registration link
+  registrationToken       String?   @unique
+  registrationTokenExpiry DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  fleetAdmin               FleetAdmin?
+  fleetDocuments           FleetDocument[]
+  agencyFleetRelationships AgencyFleetRelationship[]
+  drivers                  Driver[]
+  vehicles                 Vehicle[]
+  loads                    Load[]
+  invoices                 Invoice[]
+
+  @@map("fleets")
+}
+
+model FleetAdmin {
+  id       String  @id @default(cuid())
+  fleetId  String  @unique
+  name     String
+  email    String  @unique
+  password String
+  phone    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fleet    Fleet     @relation(fields: [fleetId], references: [id])
+  sessions Session[]
+
+  @@map("fleet_admins")
+}
+
+model FleetDocument {
+  id           String @id @default(cuid())
+  fleetId      String
+  // businessCert | operatingLicense | insuranceCert
+  documentType String
+  // Path in Supabase Storage fleet-documents bucket (private — serve via signed URL)
+  storagePath  String
+  fileName     String
+  mimeType     String
+  uploadedAt   DateTime @default(now())
+
+  fleet Fleet @relation(fields: [fleetId], references: [id])
+
+  @@map("fleet_documents")
+}
+
+model AgencyFleetRelationship {
+  id                String             @id @default(cuid())
+  agencyId          String
+  fleetId           String
+  commissionPercent Float
+  status            RelationshipStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agency Agency @relation(fields: [agencyId], references: [id])
+  fleet  Fleet  @relation(fields: [fleetId], references: [id])
+
+  @@unique([agencyId, fleetId])
+  @@map("agency_fleet_relationships")
+}
+
+// ─── DISPATCHER ─────────────────────────────────────────────
+
+model Dispatcher {
+  id       String           @id @default(cuid())
+  agencyId String
+  name     String
+  email    String           @unique
+  password String
+  phone    String?
+  status   DispatcherStatus @default(PENDING)
+
+  suspendedAt     DateTime?
+  suspendedReason String?
+
+  // Auto-calculated performance stats (updated on load completion)
+  totalLoadsCreated   Int   @default(0)
+  totalLoadsCompleted Int   @default(0)
+  totalLoadsCancelled Int   @default(0)
+  completionRate      Float @default(0)
+  onTimeDeliveryRate  Float @default(0)
+  podAcceptanceRate   Float @default(0)
+  disputeRate         Float @default(0)
+  // autoScore = weighted average of above stats (0–5)
+  autoScore           Float @default(0)
+  // adminRatingAverage = average of all DispatcherRating.overallRating
+  adminRatingAverage  Float @default(0)
+  // overallRating = (autoScore * 0.60) + (adminRatingAverage * 0.40)
+  overallRating       Float @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agency Agency @relation(fields: [agencyId], references: [id])
+
+  loads            Load[]
+  sessions         Session[]
+  agencyHistory    DispatcherAgencyHistory[]
+  transferRequests DispatcherTransferRequest[] @relation("DispatcherTransfers")
+  joinRequests     DispatcherJoinRequest[]
+  ratingsReceived  DispatcherRating[]
+
+  @@map("dispatchers")
+}
+
+model DispatcherAgencyHistory {
+  id           String    @id @default(cuid())
+  dispatcherId String
+  agencyId     String
+  startedAt    DateTime
+  endedAt      DateTime?
+  // TRANSFER | JOIN | INITIAL
+  reason       String?
+
+  dispatcher Dispatcher @relation(fields: [dispatcherId], references: [id])
+
+  @@map("dispatcher_agency_history")
+}
+
+model DispatcherTransferRequest {
+  id           String         @id @default(cuid())
+  dispatcherId String
+  fromAgencyId String
+  toAgencyId   String
+  status       TransferStatus @default(PENDING)
+
+  fromAgencyApprovedAt DateTime?
+  toAgencyApprovedAt   DateTime?
+  declinedAt           DateTime?
+  declinedByAgencyId   String?
+  declineReason        String?
+  cancelledAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dispatcher Dispatcher @relation("DispatcherTransfers", fields: [dispatcherId], references: [id])
+  fromAgency Agency     @relation("TransferFromAgency", fields: [fromAgencyId], references: [id])
+  toAgency   Agency     @relation("TransferToAgency", fields: [toAgencyId], references: [id])
+
+  @@map("dispatcher_transfer_requests")
+}
+
+model DispatcherJoinRequest {
+  id           String            @id @default(cuid())
+  dispatcherId String
+  agencyId     String
+  status       JoinRequestStatus @default(PENDING)
+  // Reason for leaving previous agency — shown to new agency admin
+  reason       String?
+
+  reviewedAt    DateTime?
+  reviewedById  String?
+  declineReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dispatcher Dispatcher @relation(fields: [dispatcherId], references: [id])
+  agency     Agency     @relation(fields: [agencyId], references: [id])
+
+  @@map("dispatcher_join_requests")
+}
+
+model DispatcherRating {
+  id           String @id @default(cuid())
+  dispatcherId String
+  agencyId     String
+  ratedById    String // AgencyUser.id
+
+  overallRating        Float
+  communicationRating  Float
+  professionalismRating Float
+  loadAccuracyRating   Float
+  reliabilityRating    Float
+  responsivenessRating Float
+  writtenReview        String?
+  // Dispatcher can respond once — not editable after submission
+  dispatcherResponse   String?
+
+  // Flagging (dispatcher flags unfair rating → Super Admin reviews)
+  isFlagged           Boolean   @default(false)
+  flagReason          String?
+  flaggedAt           DateTime?
+  // Super Admin can remove rating
+  removedBySuperAdmin Boolean   @default(false)
+  removedAt           DateTime?
+  removedReason       String?
+
+  createdAt DateTime @default(now())
+
+  dispatcher Dispatcher @relation(fields: [dispatcherId], references: [id])
+
+  // One rating per agency relationship — cannot be edited after submission
+  @@unique([dispatcherId, agencyId])
+  @@map("dispatcher_ratings")
+}
+
+// ─── DRIVER ─────────────────────────────────────────────────
+
+model Driver {
+  id       String       @id @default(cuid())
+  fleetId  String
+  name     String
+  email    String       @unique
+  // Null until driver sets password via invite link
+  password String?
+  phone    String?
+  status   DriverStatus @default(PENDING)
+
+  licenseNumber   String?
+  licenseClass    String?
+  licenseExpiry   DateTime?
+  // Stored in Supabase Storage — driver-documents bucket (private)
+  profilePhotoUrl String?
+
+  suspendedAt     DateTime?
+  suspendedReason String?
+  rejectionReason String?
+
+  // Auto-calculated performance stats
+  totalLoadsCompleted Int   @default(0)
+  onTimeDeliveryRate  Float @default(0)
+  podAcceptanceRate   Float @default(0)
+  disputeRate         Float @default(0)
+  overallRating       Float @default(0)
+
+  // One-time invite token
+  inviteToken       String?   @unique
+  inviteTokenExpiry DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fleet Fleet @relation(fields: [fleetId], references: [id])
+
+  loads            Load[]
+  sessions         Session[]
+  driverDocuments  DriverDocument[]
+  fleetHistory     DriverFleetHistory[]
+  transferRequests DriverTransferRequest[]
+  joinRequests     DriverJoinRequest[]
+
+  @@map("drivers")
+}
+
+model DriverDocument {
+  id           String @id @default(cuid())
+  driverId     String
+  // license | photo | medical | hazmat | background
+  documentType String
+  // Path in Supabase Storage — driver-documents bucket (private)
+  storagePath  String
+  fileName     String
+  mimeType     String
+  isRequired   Boolean  @default(false)
+  uploadedAt   DateTime @default(now())
+
+  driver Driver @relation(fields: [driverId], references: [id])
+
+  @@map("driver_documents")
+}
+
+model DriverFleetHistory {
+  id        String    @id @default(cuid())
+  driverId  String
+  fleetId   String
+  startedAt DateTime
+  endedAt   DateTime?
+  reason    String?
+
+  driver Driver @relation(fields: [driverId], references: [id])
+
+  @@map("driver_fleet_history")
+}
+
+model DriverTransferRequest {
+  id          String         @id @default(cuid())
+  driverId    String
+  fromFleetId String
+  toFleetId   String
+  status      TransferStatus @default(PENDING)
+
+  fromFleetApprovedAt DateTime?
+  toFleetApprovedAt   DateTime?
+  declinedAt          DateTime?
+  declinedByFleetId   String?
+  declineReason       String?
+  cancelledAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  driver Driver @relation(fields: [driverId], references: [id])
+
+  @@map("driver_transfer_requests")
+}
+
+model DriverJoinRequest {
+  id       String            @id @default(cuid())
+  driverId String
+  fleetId  String
+  status   JoinRequestStatus @default(PENDING)
+  reason   String?
+
+  reviewedAt    DateTime?
+  reviewedById  String?
+  declineReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  driver Driver @relation(fields: [driverId], references: [id])
+
+  @@map("driver_join_requests")
+}
+
+// ─── VEHICLE ─────────────────────────────────────────────────
+
+model Vehicle {
+  id          String        @id @default(cuid())
+  fleetId     String
+  make        String
+  model       String
+  year        Int
+  plateNumber String        @unique
+  vinNumber   String?       @unique
+  vehicleType VehicleType
+  capacityTons Float?
+  insuranceExpiry  DateTime?
+  inspectionExpiry DateTime?
+  status           VehicleStatus @default(AVAILABLE)
+
+  // Populated when status = UNDER_MAINTENANCE
+  maintenanceStartedAt DateTime?
+  maintenanceReason    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fleet              Fleet               @relation(fields: [fleetId], references: [id])
+  loads              Load[]
+  maintenanceRecords MaintenanceRecord[]
+
+  @@map("vehicles")
+}
+
+model MaintenanceRecord {
+  id          String    @id @default(cuid())
+  vehicleId   String
+  startedAt   DateTime
+  completedAt DateTime?
+  reason      String?
+  notes       String?
+
+  startedById   String // FleetAdmin.id
+  completedById String?
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+
+  @@map("maintenance_records")
+}
+
+// ─── LOAD ────────────────────────────────────────────────────
+
+model Load {
+  id         String @id @default(cuid())
+  // Format: LOAD-{year}-{sequence}, e.g. LOAD-2026-00001
+  loadNumber String @unique
+
+  agencyId     String
+  dispatcherId String
+  fleetId      String?
+  driverId     String?
+  vehicleId    String?
+
+  pickupLocation  String
+  dropoffLocation String
+  pickupDate      DateTime
+  deliveryDate    DateTime
+
+  // Financial fields — visibility enforced by enforceFinancialVisibility middleware
+  loadRate           Float
+  commissionPercent  Float
+  commissionAmount   Float
+  dispatcherEarnings Float  @default(0)
+  fleetEarnings      Float
+
+  status LoadStatus @default(DRAFT)
+  notes  String?
+
+  // POD — path in Supabase Storage pod-files bucket (private — serve via signed URL)
+  podFileUrl String?
+
+  // Lifecycle timestamps
+  tripStartedAt           DateTime?
+  deliverySubmittedAt     DateTime?
+  deliveryAcceptedAt      DateTime?
+  deliveryRejectedAt      DateTime?
+  deliveryRejectionReason String?
+  completedAt             DateTime?
+
+  // Cancellation
+  cancellationReason String?
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledByRole    UserRole?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agency     Agency      @relation(fields: [agencyId], references: [id])
+  dispatcher Dispatcher  @relation(fields: [dispatcherId], references: [id])
+  fleet      Fleet?      @relation(fields: [fleetId], references: [id])
+  driver     Driver?     @relation(fields: [driverId], references: [id])
+  vehicle    Vehicle?    @relation(fields: [vehicleId], references: [id])
+
+  invoice       Invoice?
+  statusHistory LoadStatusHistory[]
+
+  @@map("loads")
+}
+
+model LoadStatusHistory {
+  id            String     @id @default(cuid())
+  loadId        String
+  status        LoadStatus
+  changedAt     DateTime   @default(now())
+  changedById   String
+  changedByRole UserRole
+  note          String?
+
+  load Load @relation(fields: [loadId], references: [id])
+
+  @@map("load_status_history")
+}
+
+// ─── INVOICE ─────────────────────────────────────────────────
+
+model Invoice {
+  id            String        @id @default(cuid())
+  // Format: INV-{YEAR}-{4-digit-sequence}, e.g. INV-2026-0001
+  invoiceNumber String        @unique
+  // One invoice per load — auto-generated on COMPLETED, never manual
+  loadId        String        @unique
+  agencyId      String
+  fleetId       String
+
+  // Snapshot of financial data at time of completion
+  loadRate           Float
+  commissionPercent  Float
+  commissionAmount   Float
+  dispatcherEarnings Float
+  fleetEarnings      Float
+
+  status      InvoiceStatus @default(UNPAID)
+  generatedAt DateTime      @default(now())
+  // dueDate = completedAt + agency.paymentTermsDays — fixed at generation, never recalculated
+  dueDate     DateTime
+
+  // Payment (recorded by Agency Admin only)
+  amountPaid       Float?
+  paymentMethod    PaymentMethod?
+  paymentReference String?
+  paymentDate      DateTime?
+  paymentNotes     String?
+  paidAt           DateTime?
+  recordedById     String? // AgencyUser.id
+
+  // Dispute
+  isDisputed          Boolean   @default(false)
+  disputeReason       String?
+  disputeRaisedAt     DateTime?
+  disputeResolvedAt   DateTime?
+  disputeResolvedById String?
+
+  // PDF path in Supabase Storage — invoice-pdfs bucket (private — serve via signed URL)
+  pdfUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  load    Load    @relation(fields: [loadId], references: [id])
+  agency  Agency  @relation(fields: [agencyId], references: [id])
+  fleet   Fleet   @relation(fields: [fleetId], references: [id])
+  receipt Receipt?
+
+  @@map("invoices")
+}
+
+// ─── RECEIPT ─────────────────────────────────────────────────
+
+model Receipt {
+  id            String @id @default(cuid())
+  // Format: RCP-{YEAR}-{4-digit-sequence}, e.g. RCP-2026-0001
+  receiptNumber String @unique
+  // One receipt per invoice — auto-generated when invoice → PAID
+  invoiceId     String @unique
+
+  // IMMUTABLE snapshot — never updated after creation
+  loadId           String
+  agencyId         String
+  fleetId          String
+  loadRate         Float
+  commissionAmount Float
+  fleetEarnings    Float
+  amountPaid       Float
+  paymentMethod    PaymentMethod
+  paymentReference String?
+  paymentDate      DateTime
+  paymentNotes     String?
+
+  // PDF path in Supabase Storage — invoice-pdfs/receipts/ (private)
+  pdfUrl String?
+
+  generatedAt DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@map("receipts")
+}
+
+// ─── AUTH & SESSIONS ─────────────────────────────────────────
+
+model Session {
+  id       String   @id @default(cuid())
+  // The canonical user ID (from whichever role table)
+  userId   String
+  userRole UserRole
+  token    String   @unique
+  isActive Boolean  @default(true)
+
+  deviceInfo String?
+  ipAddress  String?
+
+  lastActivityAt DateTime @default(now())
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  // Only one of these will be set based on userRole
+  agencyUserId String?
+  dispatcherId String?
+  fleetAdminId String?
+  driverId     String?
+
+  agencyUser AgencyUser? @relation(fields: [agencyUserId], references: [id])
+  dispatcher Dispatcher? @relation(fields: [dispatcherId], references: [id])
+  fleetAdmin FleetAdmin? @relation(fields: [fleetAdminId], references: [id])
+  driver     Driver?     @relation(fields: [driverId], references: [id])
+
+  @@index([userId, isActive])
+  @@map("sessions")
+}
+
+model FailedLoginAttempt {
+  id          String   @id @default(cuid())
+  email       String
+  ipAddress   String?
+  userAgent   String?
+  attemptedAt DateTime @default(now())
+
+  @@index([email, attemptedAt])
+  @@map("failed_login_attempts")
+}
+
+// ─── AUDIT LOGS ──────────────────────────────────────────────
+
+// IMMUTABLE — no updatedAt. No update or delete endpoints. Ever.
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String
+  actorRole   UserRole
+  actorEmail  String
+  // CREATE | UPDATE | DELETE | LOGIN | LOGOUT | SUSPEND | APPROVE | REJECT | etc.
+  actionType  String
+  description String
+  // Agency | Load | Invoice | Dispatcher | Driver | Fleet | Vehicle | etc.
+  entityType  String
+  entityId    String?
+
+  oldValue Json?
+  newValue Json?
+
+  ipAddress  String?
+  deviceInfo String?
+  agencyId   String?
+
+  // Set when Super Admin is impersonating another account
+  impersonatedBySuperAdminId String?
+
+  timestamp DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId, timestamp])
+  @@index([agencyId, timestamp])
+  @@map("audit_logs")
+}
+
+// ─── NOTIFICATIONS ───────────────────────────────────────────
+
+model Notification {
+  id       String   @id @default(cuid())
+  userId   String
+  userRole UserRole
+  agencyId String?
+
+  // e.g. LOAD_ASSIGNED | DELIVERY_SUBMITTED | INVOICE_GENERATED | TRANSFER_REQUESTED
+  type    String
+  title   String
+  message String
+  // Extra context: { loadId, invoiceId, driverId, etc. }
+  data    Json?
+
+  isRead Boolean   @default(false)
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  agency Agency? @relation(fields: [agencyId], references: [id])
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ─── PLATFORM SETTINGS ───────────────────────────────────────
+
+// Key-value store for all configurable platform settings (Section 15)
+model PlatformSettings {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+model SubscriptionPlanConfig {
+  id             String           @id @default(cuid())
+  plan           SubscriptionPlan @unique
+  monthlyPrice   Float
+  // -1 = unlimited (ENTERPRISE)
+  maxDispatchers Int
+  description    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("subscription_plan_configs")
+}

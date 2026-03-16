@@ -1,8 +1,24 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 const FROM   = process.env.EMAIL_FROM || 'noreply@dispatch365.com'
 const PLATFORM_NAME = 'Dispatch 365'
+
+// Lazy client — avoids crash if RESEND_API_KEY is missing at import time
+let _resend = null
+function getResend() {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY)
+  return _resend
+}
+
+// ─── HTML Escape ──────────────────────────────────────────────
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
 
 // ─── Core Send ───────────────────────────────────────────────
 async function send({ to, subject, html }) {
@@ -11,7 +27,7 @@ async function send({ to, subject, html }) {
     return
   }
   try {
-    await resend.emails.send({ from: FROM, to, subject, html })
+    await getResend().emails.send({ from: FROM, to, subject, html })
   } catch (err) {
     console.error(`[email] Failed to send to ${to}:`, err.message)
   }
@@ -34,8 +50,8 @@ function platformLayout(title, body) {
 // ─── Agency-branded base layout ──────────────────────────────
 function agencyLayout(agency, body) {
   const logo = agency.logoUrl
-    ? `<img src="${agency.logoUrl}" alt="${agency.name}" style="height:40px;margin-bottom:8px">`
-    : `<strong style="font-size:18px">${agency.name}</strong>`
+    ? `<img src="${escapeHtml(agency.logoUrl)}" alt="${escapeHtml(agency.name)}" style="height:40px;margin-bottom:8px">`
+    : `<strong style="font-size:18px">${escapeHtml(agency.name)}</strong>`
   const primary = agency.primaryColor || '#ea580c'
   const secondary = agency.secondaryColor || '#f9fafb'
   return `
@@ -45,22 +61,55 @@ function agencyLayout(agency, body) {
     </div>
     <div style="padding:32px">${body}</div>
     <div style="background:${secondary};padding:16px 32px;font-size:12px;color:#6b7280">
-      <p style="margin:0">${agency.footerText || ''}</p>
+      <p style="margin:0">${escapeHtml(agency.footerText || '')}</p>
       <p style="margin:4px 0 0">Powered by ${PLATFORM_NAME}</p>
     </div>
   </div>`
+}
+
+// ─── Agency Created — notify agency contact (owner) ──────────
+export async function sendAgencyCreated({ to, ownerName, agencyName, plan }) {
+  await send({
+    to,
+    subject: `Your agency "${escapeHtml(agencyName)}" is live on ${PLATFORM_NAME}`,
+    html: platformLayout('Agency Created', `
+      <p>Hi ${escapeHtml(ownerName)},</p>
+      <p>Your agency <strong>${escapeHtml(agencyName)}</strong> has been successfully created on ${PLATFORM_NAME} under the <strong>${escapeHtml(plan)}</strong> plan.</p>
+      <p>Your agency admin account has been set up and they will receive a separate email with their login credentials.</p>
+      <p>You can now log in to the platform and start managing your dispatchers, fleets, and loads.</p>
+    `)
+  })
+}
+
+// ─── Agency Admin Welcome — send credentials to admin user ───
+export async function sendAgencyAdminWelcome({ to, adminName, agencyName, temporaryPassword, loginUrl }) {
+  await send({
+    to,
+    subject: `Welcome to ${PLATFORM_NAME} — your admin account is ready`,
+    html: platformLayout('Welcome to Dispatch 365', `
+      <p>Hi ${escapeHtml(adminName)},</p>
+      <p>A <strong>${PLATFORM_NAME}</strong> agency admin account has been created for you under <strong>${escapeHtml(agencyName)}</strong>.</p>
+      <p>Your login credentials:</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:8px;color:#6b7280;width:140px">Email</td><td style="padding:8px;font-weight:600">${escapeHtml(to)}</td></tr>
+        <tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Password</td><td style="padding:8px;font-weight:600;font-family:monospace">${escapeHtml(temporaryPassword)}</td></tr>
+      </table>
+      <p><strong>Please change your password immediately after logging in.</strong></p>
+      <a href="${escapeHtml(loginUrl)}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0">Log In Now</a>
+    `)
+  })
 }
 
 // ─── Fleet Invite ─────────────────────────────────────────────
 export async function sendFleetInvite({ to, adminName, agencyName, registrationUrl }) {
   await send({
     to,
-    subject: `You've been invited to join ${agencyName} on ${PLATFORM_NAME}`,
+    subject: `You've been invited to join ${escapeHtml(agencyName)} on ${PLATFORM_NAME}`,
     html: platformLayout('Fleet Invitation', `
-      <p>Hi ${adminName},</p>
-      <p><strong>${agencyName}</strong> has invited your fleet to join ${PLATFORM_NAME}.</p>
+      <p>Hi ${escapeHtml(adminName)},</p>
+      <p><strong>${escapeHtml(agencyName)}</strong> has invited your fleet to join ${PLATFORM_NAME}.</p>
       <p>Click the button below to register your fleet and upload your documents:</p>
-      <a href="${registrationUrl}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0">Register Fleet</a>
+      <a href="${escapeHtml(registrationUrl)}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0">Register Fleet</a>
       <p style="color:#6b7280;font-size:13px">This link expires in 48 hours.</p>
     `)
   })
@@ -72,8 +121,8 @@ export async function sendFleetApproved({ to, adminName, agencyName }) {
     to,
     subject: `Your fleet has been approved on ${PLATFORM_NAME}`,
     html: platformLayout('Fleet Approved', `
-      <p>Hi ${adminName},</p>
-      <p>Your fleet registration has been <strong>approved</strong>. You are now active and can receive loads from <strong>${agencyName}</strong>.</p>
+      <p>Hi ${escapeHtml(adminName)},</p>
+      <p>Your fleet registration has been <strong>approved</strong>. You are now active and can receive loads from <strong>${escapeHtml(agencyName)}</strong>.</p>
       <p>Log in to your fleet dashboard to get started.</p>
     `)
   })
@@ -85,9 +134,9 @@ export async function sendFleetRejected({ to, adminName, reason }) {
     to,
     subject: `Fleet registration update — ${PLATFORM_NAME}`,
     html: platformLayout('Registration Update', `
-      <p>Hi ${adminName},</p>
+      <p>Hi ${escapeHtml(adminName)},</p>
       <p>Unfortunately your fleet registration could not be approved at this time.</p>
-      <p><strong>Reason:</strong> ${reason}</p>
+      <p><strong>Reason:</strong> ${escapeHtml(reason)}</p>
       <p>Please contact the platform administrator if you believe this is an error.</p>
     `)
   })
@@ -97,12 +146,12 @@ export async function sendFleetRejected({ to, adminName, reason }) {
 export async function sendDriverInvite({ to, driverName, fleetName, inviteUrl }) {
   await send({
     to,
-    subject: `You've been added as a driver at ${fleetName}`,
+    subject: `You've been added as a driver at ${escapeHtml(fleetName)}`,
     html: platformLayout('Driver Invitation', `
-      <p>Hi ${driverName},</p>
-      <p>You have been added as a driver at <strong>${fleetName}</strong> on ${PLATFORM_NAME}.</p>
+      <p>Hi ${escapeHtml(driverName)},</p>
+      <p>You have been added as a driver at <strong>${escapeHtml(fleetName)}</strong> on ${PLATFORM_NAME}.</p>
       <p>Click below to set your password and complete your profile:</p>
-      <a href="${inviteUrl}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0">Set Up Account</a>
+      <a href="${escapeHtml(inviteUrl)}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0">Set Up Account</a>
       <p style="color:#6b7280;font-size:13px">This link expires in 48 hours.</p>
     `)
   })
@@ -112,16 +161,16 @@ export async function sendDriverInvite({ to, driverName, fleetName, inviteUrl })
 export async function sendLoadAssigned({ to, driverName, load, agency }) {
   await send({
     to,
-    subject: `New load assigned: ${load.loadNumber}`,
+    subject: `New load assigned: ${escapeHtml(load.loadNumber)}`,
     html: agencyLayout(agency, `
-      <p>Hi ${driverName},</p>
+      <p>Hi ${escapeHtml(driverName)},</p>
       <p>A new load has been assigned to you.</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0">
-        <tr><td style="padding:8px;color:#6b7280">Load #</td><td style="padding:8px;font-weight:600">${load.loadNumber}</td></tr>
-        <tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Pickup</td><td style="padding:8px">${load.pickupLocation}</td></tr>
-        <tr><td style="padding:8px;color:#6b7280">Dropoff</td><td style="padding:8px">${load.dropoffLocation}</td></tr>
-        <tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Pickup Date</td><td style="padding:8px">${new Date(load.pickupDate).toLocaleDateString()}</td></tr>
-        <tr><td style="padding:8px;color:#6b7280">Delivery Date</td><td style="padding:8px">${new Date(load.deliveryDate).toLocaleDateString()}</td></tr>
+        <tr><td style="padding:8px;color:#6b7280">Load #</td><td style="padding:8px;font-weight:600">${escapeHtml(load.loadNumber)}</td></tr>
+        <tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Pickup</td><td style="padding:8px">${escapeHtml(load.pickupLocation)}</td></tr>
+        <tr><td style="padding:8px;color:#6b7280">Dropoff</td><td style="padding:8px">${escapeHtml(load.dropoffLocation)}</td></tr>
+        <tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Pickup Date</td><td style="padding:8px">${escapeHtml(new Date(load.pickupDate).toLocaleDateString())}</td></tr>
+        <tr><td style="padding:8px;color:#6b7280">Delivery Date</td><td style="padding:8px">${escapeHtml(new Date(load.deliveryDate).toLocaleDateString())}</td></tr>
       </table>
       <p>Log in to your mobile app to view full details.</p>
     `)
@@ -132,10 +181,10 @@ export async function sendLoadAssigned({ to, driverName, load, agency }) {
 export async function sendDeliverySubmitted({ to, dispatcherName, load, agency }) {
   await send({
     to,
-    subject: `POD submitted for review — ${load.loadNumber}`,
+    subject: `POD submitted for review — ${escapeHtml(load.loadNumber)}`,
     html: agencyLayout(agency, `
-      <p>Hi ${dispatcherName},</p>
-      <p>The driver has submitted proof of delivery for load <strong>${load.loadNumber}</strong>.</p>
+      <p>Hi ${escapeHtml(dispatcherName)},</p>
+      <p>The driver has submitted proof of delivery for load <strong>${escapeHtml(load.loadNumber)}</strong>.</p>
       <p>Please log in to review the POD and accept or reject the delivery.</p>
     `)
   })
@@ -145,10 +194,10 @@ export async function sendDeliverySubmitted({ to, dispatcherName, load, agency }
 export async function sendLoadCompleted({ to, recipientName, load, agency }) {
   await send({
     to,
-    subject: `Load completed — ${load.loadNumber}`,
+    subject: `Load completed — ${escapeHtml(load.loadNumber)}`,
     html: agencyLayout(agency, `
-      <p>Hi ${recipientName},</p>
-      <p>Load <strong>${load.loadNumber}</strong> has been completed and an invoice has been generated.</p>
+      <p>Hi ${escapeHtml(recipientName)},</p>
+      <p>Load <strong>${escapeHtml(load.loadNumber)}</strong> has been completed and an invoice has been generated.</p>
     `)
   })
 }
@@ -157,13 +206,13 @@ export async function sendLoadCompleted({ to, recipientName, load, agency }) {
 export async function sendInvoiceGenerated({ to, recipientName, invoice, load, agency }) {
   await send({
     to,
-    subject: `Invoice ${invoice.invoiceNumber} generated`,
+    subject: `Invoice ${escapeHtml(invoice.invoiceNumber)} generated`,
     html: agencyLayout(agency, `
-      <p>Hi ${recipientName},</p>
-      <p>Invoice <strong>${invoice.invoiceNumber}</strong> has been generated for load ${load.loadNumber}.</p>
+      <p>Hi ${escapeHtml(recipientName)},</p>
+      <p>Invoice <strong>${escapeHtml(invoice.invoiceNumber)}</strong> has been generated for load ${escapeHtml(load.loadNumber)}.</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0">
-        <tr><td style="padding:8px;color:#6b7280">Amount Due</td><td style="padding:8px;font-weight:600">$${invoice.fleetEarnings.toFixed(2)}</td></tr>
-        <tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Due Date</td><td style="padding:8px">${new Date(invoice.dueDate).toLocaleDateString()}</td></tr>
+        <tr><td style="padding:8px;color:#6b7280">Amount Due</td><td style="padding:8px;font-weight:600">$${escapeHtml(invoice.fleetEarnings.toFixed(2))}</td></tr>
+        <tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Due Date</td><td style="padding:8px">${escapeHtml(new Date(invoice.dueDate).toLocaleDateString())}</td></tr>
       </table>
     `)
   })
@@ -173,11 +222,11 @@ export async function sendInvoiceGenerated({ to, recipientName, invoice, load, a
 export async function sendInvoiceDueReminder({ to, recipientName, invoice, agency, daysUntilDue }) {
   await send({
     to,
-    subject: `Invoice ${invoice.invoiceNumber} due in ${daysUntilDue} day(s)`,
+    subject: `Invoice ${escapeHtml(invoice.invoiceNumber)} due in ${escapeHtml(daysUntilDue)} day(s)`,
     html: agencyLayout(agency, `
-      <p>Hi ${recipientName},</p>
-      <p>Invoice <strong>${invoice.invoiceNumber}</strong> is due in <strong>${daysUntilDue} day(s)</strong>.</p>
-      <p>Amount: $${invoice.fleetEarnings.toFixed(2)}</p>
+      <p>Hi ${escapeHtml(recipientName)},</p>
+      <p>Invoice <strong>${escapeHtml(invoice.invoiceNumber)}</strong> is due in <strong>${escapeHtml(daysUntilDue)} day(s)</strong>.</p>
+      <p>Amount: $${escapeHtml(invoice.fleetEarnings.toFixed(2))}</p>
     `)
   })
 }
@@ -186,11 +235,11 @@ export async function sendInvoiceDueReminder({ to, recipientName, invoice, agenc
 export async function sendInvoiceOverdue({ to, recipientName, invoice, agency }) {
   await send({
     to,
-    subject: `OVERDUE: Invoice ${invoice.invoiceNumber}`,
+    subject: `OVERDUE: Invoice ${escapeHtml(invoice.invoiceNumber)}`,
     html: agencyLayout(agency, `
-      <p>Hi ${recipientName},</p>
-      <p>Invoice <strong>${invoice.invoiceNumber}</strong> is now <strong>overdue</strong>. Please arrange payment immediately.</p>
-      <p>Amount: $${invoice.fleetEarnings.toFixed(2)}</p>
+      <p>Hi ${escapeHtml(recipientName)},</p>
+      <p>Invoice <strong>${escapeHtml(invoice.invoiceNumber)}</strong> is now <strong>overdue</strong>. Please arrange payment immediately.</p>
+      <p>Amount: $${escapeHtml(invoice.fleetEarnings.toFixed(2))}</p>
     `)
   })
 }
