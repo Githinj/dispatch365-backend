@@ -1,6 +1,8 @@
 import { z } from 'zod'
-import { login, logout, getUserById } from '../services/auth.service.js'
+import bcrypt from 'bcryptjs'
+import { login, logout, getUserById, findUserByEmail } from '../services/auth.service.js'
 import { sessionService } from '../services/redis.service.js'
+import { prisma } from '../services/prisma.service.js'
 import { respond } from '../utils/respond.js'
 import { writeAuditLog } from '../middleware/audit.middleware.js'
 
@@ -75,6 +77,46 @@ export async function meHandler(req, res) {
   const user = await getUserById(req.user.id, req.user.role)
   if (!user) return respond.notFound(res, 'User not found.')
   return respond.success(res, user)
+}
+
+// POST /api/auth/change-password
+export async function changePasswordHandler(req, res) {
+  const { currentPassword, newPassword } = z.object({
+    currentPassword: z.string().min(1),
+    newPassword:     z.string().min(8, 'New password must be at least 8 characters')
+  }).parse(req.body)
+
+  const found = await findUserByEmail(req.user.email)
+  if (!found) return respond.notFound(res, 'User not found.')
+
+  const valid = await bcrypt.compare(currentPassword, found.user.password)
+  if (!valid) return respond.error(res, 'Current password is incorrect.', 400, 'INVALID_PASSWORD')
+
+  const hashed = await bcrypt.hash(newPassword, 12)
+
+  const ROLE_MODEL = {
+    SUPER_ADMIN:  'superAdmin',
+    AGENCY_ADMIN: 'agencyUser',
+    DISPATCHER:   'dispatcher',
+    FLEET_ADMIN:  'fleetAdmin',
+    DRIVER:       'driver'
+  }
+  const model = ROLE_MODEL[req.user.role]
+  await prisma[model].update({ where: { id: req.user.id }, data: { password: hashed } })
+
+  await writeAuditLog({
+    actorId:    req.user.id,
+    actorRole:  req.user.role,
+    actorEmail: req.user.email,
+    actionType: 'UPDATE',
+    description: 'User changed their password',
+    entityType: 'Auth',
+    entityId:   req.user.id,
+    ipAddress:  req.ip,
+    deviceInfo: req.headers['user-agent']
+  })
+
+  return respond.success(res, null, 'Password changed successfully.')
 }
 
 // POST /api/auth/refresh-session

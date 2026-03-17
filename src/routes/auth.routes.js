@@ -4,7 +4,8 @@ import {
   loginHandler,
   logoutHandler,
   meHandler,
-  refreshSessionHandler
+  refreshSessionHandler,
+  changePasswordHandler
 } from '../controllers/auth.controller.js'
 
 const router = Router()
@@ -13,8 +14,9 @@ const router = Router()
 router.post('/login',   loginHandler)
 
 // Protected routes
-router.post('/logout',          authenticate, logoutHandler)
-router.get('/me',               authenticate, meHandler)
-router.post('/refresh-session', authenticate, refreshSessionHandler)
+router.post('/logout',           authenticate, logoutHandler)
+router.get('/me',                authenticate, meHandler)
+router.post('/refresh-session',  authenticate, refreshSessionHandler)
+router.post('/change-password',  authenticate, changePasswordHandler)
 
 export default router
