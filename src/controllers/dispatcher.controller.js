@@ -97,9 +97,9 @@ export async function createDispatcherHandler(req, res) {
   if (result.error === 'NOT_FOUND')     return respond.notFound(res)
   if (result.error === 'EMAIL_IN_USE')  return respond.error(res, result.message, 409, 'EMAIL_IN_USE')
 
-  // Strip password from response
+  // Strip hashed password but include temporaryPassword for the admin to share
   const { password: _, ...safe } = result.dispatcher
-  return respond.created(res, safe, 'Dispatcher created successfully.')
+  return respond.created(res, { ...safe, temporaryPassword: result.temporaryPassword }, 'Dispatcher created successfully.')
 }
 
 // ─── GET /api/dispatchers ─────────────────────────────────────

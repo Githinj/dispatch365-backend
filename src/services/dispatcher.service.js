@@ -105,7 +105,10 @@ export async function createDispatcher({ agencyId, name, email, phone, actorId, 
     loginUrl
   }).catch(err => console.error('[email] sendDispatcherWelcome failed:', err.message))
 
-  return { dispatcher }
+  // Always log credentials to console as fallback in case email fails
+  console.log(`[Dispatcher Created] ${lower} / temp password: ${tempPassword}`)
+
+  return { dispatcher, temporaryPassword: tempPassword }
 }
 
 // ─── List Dispatchers ──────────────────────────────────────────
