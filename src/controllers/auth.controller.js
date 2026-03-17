@@ -102,7 +102,9 @@ export async function changePasswordHandler(req, res) {
     DRIVER:       'driver'
   }
   const model = ROLE_MODEL[req.user.role]
-  await prisma[model].update({ where: { id: req.user.id }, data: { password: hashed } })
+  const updateData = { password: hashed }
+  if (req.user.role === 'DISPATCHER') updateData.mustChangePassword = false
+  await prisma[model].update({ where: { id: req.user.id }, data: updateData })
 
   await writeAuditLog({
     actorId:    req.user.id,

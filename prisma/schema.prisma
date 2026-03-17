@@ -297,8 +297,9 @@ model Dispatcher {
   phone    String?
   status   DispatcherStatus @default(PENDING)
 
-  suspendedAt     DateTime?
-  suspendedReason String?
+  mustChangePassword Boolean   @default(false)
+  suspendedAt        DateTime?
+  suspendedReason    String?
 
   // Auto-calculated performance stats (updated on load completion)
   totalLoadsCreated   Int   @default(0)

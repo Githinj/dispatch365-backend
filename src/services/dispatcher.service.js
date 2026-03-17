@@ -68,10 +68,11 @@ export async function createDispatcher({ agencyId, name, email, phone, actorId, 
       data: {
         agencyId,
         name,
-        email:    lower,
-        password: hashed,
-        phone:    phone ?? null,
-        status:   'ACTIVE'
+        email:             lower,
+        password:          hashed,
+        phone:             phone ?? null,
+        status:            'ACTIVE',
+        mustChangePassword: true
       }
     })
 
