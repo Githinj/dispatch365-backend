@@ -27,10 +27,9 @@ import {
 // ─── Validation Schemas ───────────────────────────────────────
 
 const createSchema = z.object({
-  name:     z.string().min(1).max(200),
-  email:    z.string().email(),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  phone:    z.string().max(30).optional()
+  name:  z.string().min(1).max(200),
+  email: z.string().email(),
+  phone: z.string().max(30).optional()
 }).strict()
 
 const updateProfileSchema = z.object({
@@ -83,11 +82,11 @@ const suspendSchema = z.object({
 
 // ─── POST /api/dispatchers ────────────────────────────────────
 export async function createDispatcherHandler(req, res) {
-  const { name, email, password, phone } = createSchema.parse(req.body)
+  const { name, email, phone } = createSchema.parse(req.body)
 
   const result = await createDispatcher({
     agencyId:   req.user.agencyId,
-    name, email, password, phone,
+    name, email, phone,
     actorId:    req.user.id,
     actorRole:  req.user.role,
     actorEmail: req.user.email,

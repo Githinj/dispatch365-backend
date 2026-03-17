@@ -256,6 +256,25 @@ export async function sendPaymentRecorded({ to, recipientName, invoice, agency }
   })
 }
 
+// ─── Dispatcher Welcome — send credentials to new dispatcher ─
+export async function sendDispatcherWelcome({ to, dispatcherName, agencyName, temporaryPassword, loginUrl }) {
+  await send({
+    to,
+    subject: `Welcome to ${PLATFORM_NAME} — your dispatcher account is ready`,
+    html: platformLayout('Welcome, Dispatcher!', `
+      <p>Hi ${escapeHtml(dispatcherName)},</p>
+      <p>An account has been created for you as a dispatcher at <strong>${escapeHtml(agencyName)}</strong> on ${PLATFORM_NAME}.</p>
+      <p>Your login credentials:</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:8px;color:#6b7280;width:140px">Email</td><td style="padding:8px;font-weight:600">${escapeHtml(to)}</td></tr>
+        <tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Password</td><td style="padding:8px;font-weight:600;font-family:monospace">${escapeHtml(temporaryPassword)}</td></tr>
+      </table>
+      <p><strong>Please change your password immediately after logging in.</strong></p>
+      <a href="${escapeHtml(loginUrl)}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0">Log In Now</a>
+    `)
+  })
+}
+
 // ─── Transfer Request (platform-branded) ─────────────────────
 export async function sendTransferRequest({ to, adminName, dispatcherName, fromAgency, toAgency }) {
   await send({

@@ -4,6 +4,7 @@ import { sessionService } from './redis.service.js'
 import { writeAuditLog } from '../middleware/audit.middleware.js'
 import { checkDispatcherLimit } from './agency.service.js'
 import {
+  sendDispatcherWelcome,
   sendTransferRequest,
   sendTransferApproved,
   sendTransferDeclined
@@ -37,8 +38,14 @@ async function recalcRating(dispatcherId, tx = prisma) {
   })
 }
 
+// ─── Generate Temporary Password ──────────────────────────────
+function generateTempPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$'
+  return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+}
+
 // ─── Create Dispatcher ─────────────────────────────────────────
-export async function createDispatcher({ agencyId, name, email, password, phone, actorId, actorRole, actorEmail, ipAddress }) {
+export async function createDispatcher({ agencyId, name, email, phone, actorId, actorRole, actorEmail, ipAddress }) {
   // Enforce subscription plan dispatcher limit
   const limitCheck = await checkDispatcherLimit(agencyId)
   if (!limitCheck.allowed) return { error: 'LIMIT_REACHED', message: limitCheck.reason }
@@ -53,7 +60,8 @@ export async function createDispatcher({ agencyId, name, email, password, phone,
   if (!agency)   return { error: 'NOT_FOUND',    message: 'Agency not found.' }
   if (existing)  return { error: 'EMAIL_IN_USE', message: 'A dispatcher with this email already exists.' }
 
-  const hashed = await bcrypt.hash(password, 12)
+  const tempPassword = generateTempPassword()
+  const hashed = await bcrypt.hash(tempPassword, 12)
 
   const dispatcher = await prisma.$transaction(async (tx) => {
     const d = await tx.dispatcher.create({
@@ -87,6 +95,15 @@ export async function createDispatcher({ agencyId, name, email, password, phone,
     ipAddress,
     agencyId
   })
+
+  const loginUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`
+  sendDispatcherWelcome({
+    to: lower,
+    dispatcherName: name,
+    agencyName: agency.name,
+    temporaryPassword: tempPassword,
+    loginUrl
+  }).catch(err => console.error('[email] sendDispatcherWelcome failed:', err.message))
 
   return { dispatcher }
 }
