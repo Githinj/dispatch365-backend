@@ -161,12 +161,13 @@ export async function sendDriverInvite({ to, driverName, fleetName, inviteUrl })
 export async function sendLoadAssigned({ to, driverName, load, agency }) {
   await send({
     to,
-    subject: `New load assigned: ${escapeHtml(load.loadNumber)}`,
+    subject: `New load assigned: ${escapeHtml(load.serialNumber)}`,
     html: agencyLayout(agency, `
       <p>Hi ${escapeHtml(driverName)},</p>
       <p>A new load has been assigned to you.</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0">
-        <tr><td style="padding:8px;color:#6b7280">Load #</td><td style="padding:8px;font-weight:600">${escapeHtml(load.loadNumber)}</td></tr>
+        <tr><td style="padding:8px;color:#6b7280">Serial #</td><td style="padding:8px;font-weight:600">${escapeHtml(load.serialNumber)}</td></tr>
+        ${load.loadNumber ? `<tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Load #</td><td style="padding:8px;font-weight:600">${escapeHtml(load.loadNumber)}</td></tr>` : ''}
         <tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Pickup</td><td style="padding:8px">${escapeHtml(load.pickupLocation)}</td></tr>
         <tr><td style="padding:8px;color:#6b7280">Dropoff</td><td style="padding:8px">${escapeHtml(load.dropoffLocation)}</td></tr>
         <tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Pickup Date</td><td style="padding:8px">${escapeHtml(new Date(load.pickupDate).toLocaleDateString())}</td></tr>
@@ -181,10 +182,10 @@ export async function sendLoadAssigned({ to, driverName, load, agency }) {
 export async function sendDeliverySubmitted({ to, dispatcherName, load, agency }) {
   await send({
     to,
-    subject: `POD submitted for review — ${escapeHtml(load.loadNumber)}`,
+    subject: `POD submitted for review — ${escapeHtml(load.serialNumber)}`,
     html: agencyLayout(agency, `
       <p>Hi ${escapeHtml(dispatcherName)},</p>
-      <p>The driver has submitted proof of delivery for load <strong>${escapeHtml(load.loadNumber)}</strong>.</p>
+      <p>The driver has submitted proof of delivery for load <strong>${escapeHtml(load.serialNumber)}</strong>.</p>
       <p>Please log in to review the POD and accept or reject the delivery.</p>
     `)
   })
@@ -194,10 +195,10 @@ export async function sendDeliverySubmitted({ to, dispatcherName, load, agency }
 export async function sendLoadCompleted({ to, recipientName, load, agency }) {
   await send({
     to,
-    subject: `Load completed — ${escapeHtml(load.loadNumber)}`,
+    subject: `Load completed — ${escapeHtml(load.serialNumber)}`,
     html: agencyLayout(agency, `
       <p>Hi ${escapeHtml(recipientName)},</p>
-      <p>Load <strong>${escapeHtml(load.loadNumber)}</strong> has been completed and an invoice has been generated.</p>
+      <p>Load <strong>${escapeHtml(load.serialNumber)}</strong> has been completed and an invoice has been generated.</p>
     `)
   })
 }
@@ -209,7 +210,7 @@ export async function sendInvoiceGenerated({ to, recipientName, invoice, load, a
     subject: `Invoice ${escapeHtml(invoice.invoiceNumber)} generated`,
     html: agencyLayout(agency, `
       <p>Hi ${escapeHtml(recipientName)},</p>
-      <p>Invoice <strong>${escapeHtml(invoice.invoiceNumber)}</strong> has been generated for load ${escapeHtml(load.loadNumber)}.</p>
+      <p>Invoice <strong>${escapeHtml(invoice.invoiceNumber)}</strong> has been generated for load ${escapeHtml(load.serialNumber)}.</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0">
         <tr><td style="padding:8px;color:#6b7280">Amount Due</td><td style="padding:8px;font-weight:600">$${escapeHtml(invoice.fleetEarnings.toFixed(2))}</td></tr>
         <tr style="background:#f9fafb"><td style="padding:8px;color:#6b7280">Due Date</td><td style="padding:8px">${escapeHtml(new Date(invoice.dueDate).toLocaleDateString())}</td></tr>

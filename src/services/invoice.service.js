@@ -100,7 +100,7 @@ export async function generateInvoice(loadId) {
         agencyId: load.agencyId,
         type:     'INVOICE_GENERATED',
         title:    'Invoice generated',
-        message:  `Invoice ${invoiceNumber} for load ${load.loadNumber} is ready. Due: ${invoice.dueDate.toLocaleDateString()}.`,
+        message:  `Invoice ${invoiceNumber} for load ${load.serialNumber} is ready. Due: ${invoice.dueDate.toLocaleDateString()}.`,
         data:     { invoiceId: invoice.id, invoiceNumber, loadId: load.id }
       })
     }
@@ -574,7 +574,8 @@ function buildInvoiceHTML(invoice, load, agency, fleet) {
   <div class="load-section">
     <h3>Load Details</h3>
     <div class="load-grid">
-      <div class="load-item"><label>Load Number</label><span>${esc(load.loadNumber)}</span></div>
+      <div class="load-item"><label>Serial #</label><span>${esc(load.serialNumber)}</span></div>
+      ${load.loadNumber ? `<div class="load-item"><label>Load #</label><span>${esc(load.loadNumber)}</span></div>` : ''}
       <div class="load-item"><label>Pickup Location</label><span>${esc(load.pickupLocation)}</span></div>
       <div class="load-item"><label>Dropoff Location</label><span>${esc(load.dropoffLocation)}</span></div>
       <div class="load-item"><label>Completed</label><span>${fDate(load.completedAt)}</span></div>

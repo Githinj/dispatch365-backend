@@ -9,12 +9,12 @@ import {
 import { generateInvoice } from './invoice.service.js'
 import { createNotification } from './notification.service.js'
 
-// ─── Load Number Generator ─────────────────────────────────────
+// ─── Serial Number Generator ───────────────────────────────────
 // Format: LOAD-{year}-{5-digit-sequence}, e.g. LOAD-2026-00001
-async function generateLoadNumber() {
+async function generateSerialNumber() {
   const year   = new Date().getFullYear()
   const prefix = `LOAD-${year}-`
-  const count  = await prisma.load.count({ where: { loadNumber: { startsWith: prefix } } })
+  const count  = await prisma.load.count({ where: { serialNumber: { startsWith: prefix } } })
   return `${prefix}${String(count + 1).padStart(5, '0')}`
 }
 
@@ -77,7 +77,7 @@ async function validateAssignment(agencyId, fleetId, driverId, vehicleId) {
 // Dispatcher creates a load. If fleetId + driverId + vehicleId are all provided,
 // assignment is done immediately (ASSIGNED). Otherwise DRAFT.
 export async function createLoad(data, { actorId, actorRole, actorEmail, ipAddress, agencyId }) {
-  const { fleetId, driverId, vehicleId, loadRate, notes, ...rest } = data
+  const { fleetId, driverId, vehicleId, loadRate, notes, loadNumber, ...rest } = data
 
   const isFullAssignment = !!(fleetId && driverId && vehicleId)
 
@@ -92,14 +92,15 @@ export async function createLoad(data, { actorId, actorRole, actorEmail, ipAddre
     commissionPercent = +(check.rel.commissionPercent)
   }
 
-  const loadNumber = await generateLoadNumber()
-  const status     = isFullAssignment ? 'ASSIGNED' : 'DRAFT'
-  const now        = new Date()
+  const serialNumber = await generateSerialNumber()
+  const status       = isFullAssignment ? 'ASSIGNED' : 'DRAFT'
+  const now          = new Date()
 
   const load = await prisma.$transaction(async (tx) => {
     const l = await tx.load.create({
       data: {
-        loadNumber,
+        serialNumber,
+        loadNumber:   loadNumber ?? null,
         agencyId,
         dispatcherId: actorId,
         fleetId:      fleetId   ?? null,
@@ -136,10 +137,10 @@ export async function createLoad(data, { actorId, actorRole, actorEmail, ipAddre
     actorRole,
     actorEmail,
     actionType:  'CREATE',
-    description: `Load ${loadNumber} created${isFullAssignment ? ' and assigned' : ' as draft'}.`,
+    description: `Load ${serialNumber} created${isFullAssignment ? ' and assigned' : ' as draft'}.`,
     entityType:  'Load',
     entityId:    load.id,
-    newValue:    { loadNumber, status, agencyId },
+    newValue:    { serialNumber, status, agencyId },
     ipAddress,
     agencyId
   })
@@ -180,7 +181,7 @@ export async function assignLoad(loadId, { fleetId, driverId, vehicleId, actorId
     actorRole,
     actorEmail,
     actionType:  'ASSIGN',
-    description: `Load ${load.loadNumber} assigned to fleet ${fleetId}.`,
+    description: `Load ${load.serialNumber} assigned to fleet ${fleetId}.`,
     entityType:  'Load',
     entityId:    loadId,
     oldValue:    { status: 'DRAFT' },
@@ -216,7 +217,7 @@ export async function updateLoad(loadId, data, { actorId, actorRole, actorEmail,
     actorRole,
     actorEmail,
     actionType:  'UPDATE',
-    description: `Load ${load.loadNumber} updated.`,
+    description: `Load ${load.serialNumber} updated.`,
     entityType:  'Load',
     entityId:    loadId,
     oldValue:    load,
@@ -250,7 +251,7 @@ export async function startTrip(loadId, { actorId, actorRole, actorEmail, ipAddr
     actorRole,
     actorEmail,
     actionType:  'TRIP_START',
-    description: `Load ${load.loadNumber} trip started.`,
+    description: `Load ${load.serialNumber} trip started.`,
     entityType:  'Load',
     entityId:    loadId,
     oldValue:    { status: 'ASSIGNED' },
@@ -297,7 +298,7 @@ export async function submitDelivery(loadId, podFile, { actorId, actorRole, acto
     actorRole,
     actorEmail,
     actionType:  'POD_SUBMIT',
-    description: `POD submitted for load ${load.loadNumber}.`,
+    description: `POD submitted for load ${load.serialNumber}.`,
     entityType:  'Load',
     entityId:    loadId,
     newValue:    { podStoragePath, deliverySubmittedAt: now },
@@ -345,7 +346,7 @@ export async function acceptDelivery(loadId, { actorId, actorRole, actorEmail, i
     actorRole,
     actorEmail,
     actionType:  'DELIVERY_ACCEPT',
-    description: `Delivery accepted for load ${load.loadNumber}. Load COMPLETED.`,
+    description: `Delivery accepted for load ${load.serialNumber}. Load COMPLETED.`,
     entityType:  'Load',
     entityId:    loadId,
     oldValue:    { status: load.status },
@@ -397,7 +398,7 @@ export async function rejectDelivery(loadId, { reason, actorId, actorRole, actor
     actorRole,
     actorEmail,
     actionType:  'DELIVERY_REJECT',
-    description: `Delivery rejected for load ${load.loadNumber}. Reason: ${reason}.`,
+    description: `Delivery rejected for load ${load.serialNumber}. Reason: ${reason}.`,
     entityType:  'Load',
     entityId:    loadId,
     oldValue:    { status: load.status },
@@ -469,7 +470,7 @@ export async function cancelLoad(loadId, { reason, actorId, actorRole, actorEmai
     actorRole,
     actorEmail,
     actionType:  'CANCEL',
-    description: `Load ${load.loadNumber} cancelled. Reason: ${reason ?? 'Not specified'}.`,
+    description: `Load ${load.serialNumber} cancelled. Reason: ${reason ?? 'Not specified'}.`,
     entityType:  'Load',
     entityId:    loadId,
     oldValue:    { status: load.status },
@@ -590,8 +591,8 @@ async function notifyLoadAssigned(load, agencyId) {
       agencyId,
       type:     'LOAD_ASSIGNED',
       title:    'New load assigned',
-      message:  `Load ${load.loadNumber} has been assigned to you.`,
-      data:     { loadId: load.id, loadNumber: load.loadNumber }
+      message:  `Load ${load.serialNumber} has been assigned to you.`,
+      data:     { loadId: load.id, serialNumber: load.serialNumber }
     })
   } catch (err) {
     console.error('[Load] Failed to send assignment notification:', err.message)
@@ -614,8 +615,8 @@ async function notifyDeliverySubmitted(load) {
       agencyId: load.agencyId,
       type:     'DELIVERY_SUBMITTED',
       title:    'Proof of delivery submitted',
-      message:  `Driver submitted POD for load ${load.loadNumber}. Review and confirm.`,
-      data:     { loadId: load.id, loadNumber: load.loadNumber }
+      message:  `Driver submitted POD for load ${load.serialNumber}. Review and confirm.`,
+      data:     { loadId: load.id, serialNumber: load.serialNumber }
     })
   } catch (err) {
     console.error('[Load] Failed to send POD notification:', err.message)
@@ -637,8 +638,8 @@ async function notifyLoadCompleted(load, agencyId) {
       agencyId,
       type:     'LOAD_COMPLETED',
       title:    'Load completed',
-      message:  `Load ${load.loadNumber} has been completed and an invoice has been generated.`,
-      data:     { loadId: load.id, loadNumber: load.loadNumber }
+      message:  `Load ${load.serialNumber} has been completed and an invoice has been generated.`,
+      data:     { loadId: load.id, serialNumber: load.serialNumber }
     })
     // Also notify fleet admin
     if (load.fleetId) {
@@ -654,8 +655,8 @@ async function notifyLoadCompleted(load, agencyId) {
           agencyId,
           type:     'LOAD_COMPLETED',
           title:    'Load completed — invoice incoming',
-          message:  `Load ${load.loadNumber} is complete. An invoice will be generated shortly.`,
-          data:     { loadId: load.id, loadNumber: load.loadNumber }
+          message:  `Load ${load.serialNumber} is complete. An invoice will be generated shortly.`,
+          data:     { loadId: load.id, serialNumber: load.serialNumber }
         })
       }
     }

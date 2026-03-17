@@ -17,6 +17,7 @@ import {
 // ─── Validation Schemas ───────────────────────────────────────
 
 const createSchema = z.object({
+  loadNumber:      z.string().min(1).max(100),
   pickupLocation:  z.string().min(1).max(500),
   dropoffLocation: z.string().min(1).max(500),
   pickupDate:      z.string().datetime(),
@@ -35,6 +36,7 @@ const assignSchema = z.object({
 }).strict()
 
 const updateSchema = z.object({
+  loadNumber:      z.string().min(1).max(100).optional(),
   pickupLocation:  z.string().min(1).max(500).optional(),
   dropoffLocation: z.string().min(1).max(500).optional(),
   pickupDate:      z.string().datetime().optional(),

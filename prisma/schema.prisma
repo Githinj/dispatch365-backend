@@ -592,9 +592,11 @@ model MaintenanceRecord {
 // ─── LOAD ────────────────────────────────────────────────────
 
 model Load {
-  id         String @id @default(cuid())
-  // Format: LOAD-{year}-{sequence}, e.g. LOAD-2026-00001
-  loadNumber String @unique
+  id           String  @id @default(cuid())
+  // Auto-generated serial: LOAD-{year}-{sequence}, e.g. LOAD-2026-00001
+  serialNumber String? @unique
+  // Dispatcher-entered load number (e.g. from shipper/broker)
+  loadNumber   String?
 
   agencyId     String
   dispatcherId String
